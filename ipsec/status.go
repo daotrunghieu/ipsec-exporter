@@ -4,7 +4,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
-
 	"github.com/prometheus/common/log"
 )
 
@@ -27,25 +26,7 @@ const (
 	ignored               connectionStatus = 4
 )
 
-type statusProvider interface {
-	statusOutput(tunnel connection) (string, error)
-}
-
-type cliStatusProvider struct {
-}
-
-func (c *cliStatusProvider) statusOutput(tunnel connection) (string, error) {
-	cmd := exec.Command("ipsec", "statusall", tunnel.name)
-	out, err := cmd.Output()
-
-	if err != nil {
-		return "", err
-	}
-
-	return string(out), nil
-}
-
-func queryStatus(ipSecConfiguration *Configuration, provider statusProvider) map[string]*status {
+func queryStatus(ipSecConfiguration *Configuration) map[string]*status {
 	statusMap := map[string]*status{}
 
 	for _, connection := range ipSecConfiguration.tunnel {
@@ -57,43 +38,42 @@ func queryStatus(ipSecConfiguration *Configuration, provider statusProvider) map
 			continue
 		}
 
-		if out, err := provider.statusOutput(connection); err != nil {
-			log.Warnf("Unable to retrieve the status of tunnel '%s'. Reason: %v", connection.name, err)
+		out1, err1 := exec.Command("ipsec", "status").Output()
+		out2, err2 := exec.Command("ipsec", "whack", "--trafficstatus").Output()
+
+		if err1 != nil || err2 !=nil {
+			log.Warnf("Unable to retrieve the status of tunnel '%s'. Reason: %v", connection.name, err1)
+			log.Warnf("Unable to retrieve the status of tunnel '%s'. Reason: %v", connection.name, err2)
 			statusMap[connection.name] = &status{
 				up:     false,
 				status: unknown,
 			}
 		} else {
-			statusMap[connection.name] = &status{
-				up:         true,
-				status:     extractStatus([]byte(out)),
-				bytesIn:    extractIntWithRegex(out, `([[0-9]+) bytes_i`),
-				bytesOut:   extractIntWithRegex(out, `([[0-9]+) bytes_o`),
-				packetsIn:  extractIntWithRegex(out, `bytes_i \(([[0-9]+) pkts`),
-				packetsOut: extractIntWithRegex(out, `bytes_o \(([[0-9]+) pkts`),
+			stutas := status{up:true}
+
+			tunnelEstablishedRegex := regexp.MustCompile(connection.name + `.*erouted`)
+			connectionEstablishedRegex := regexp.MustCompile(connection.name + `.*established`)
+
+			if connectionEstablishedRegex.Match(out1) {
+				if tunnelEstablishedRegex.Match(out1) {
+					stutas.status = tunnelInstalled
+				} else {
+					stutas.status = connectionEstablished
+				}
+			} else {
+				stutas.status = down
 			}
+
+			stutas.bytesIn    = extractIntWithRegex(string(out2), connection.name + `.*inBytes=([0-9]+)`)
+			stutas.bytesOut   = extractIntWithRegex(string(out2), connection.name + `.*outBytes=([0-9]+)`)
+			stutas.packetsIn  = extractIntWithRegex(string(out2), connection.name + `bytes_i \(([[0-9]+) pkts`)
+			stutas.packetsOut = extractIntWithRegex(string(out2), connection.name + `bytes_o \(([[0-9]+) pkts`)
+
+			statusMap[connection.name] = &stutas
 		}
 	}
 
 	return statusMap
-}
-
-func extractStatus(statusLine []byte) connectionStatus {
-	noMatchRegex := regexp.MustCompile(`no match`)
-	tunnelEstablishedRegex := regexp.MustCompile(`{[0-9]+}: *INSTALLED`)
-	connectionEstablishedRegex := regexp.MustCompile(`[[0-9]+]: *ESTABLISHED`)
-
-	if connectionEstablishedRegex.Match(statusLine) {
-		if tunnelEstablishedRegex.Match(statusLine) {
-			return tunnelInstalled
-		} else {
-			return connectionEstablished
-		}
-	} else if noMatchRegex.Match(statusLine) {
-		return down
-	}
-
-	return unknown
 }
 
 func extractIntWithRegex(input string, regex string) int {

@@ -60,7 +60,7 @@ func Server() {
 
 func init() {
 	RootCmd.PersistentFlags().StringVar(&IpSecConfigFile, flagIpsecConfigFile, "/etc/ipsec.conf", "Path to the ipsec config file.")
-	RootCmd.PersistentFlags().IntVar(&WebListenAddress, flagWebListenAddress, 10437, "Address on which to expose metrics.")
+	RootCmd.PersistentFlags().IntVar(&WebListenAddress, flagWebListenAddress, 9110, "Address on which to expose metrics.")
 }
 
 func Execute() {

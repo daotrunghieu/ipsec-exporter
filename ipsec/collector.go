@@ -34,7 +34,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	for _, configuration := range c.configurations {
-		status := queryStatus(configuration, &cliStatusProvider{})
+		status := queryStatus(configuration)
 
 		for tunnel, tunnelStatus := range status {
 			ch <- prometheus.MustNewConstMetric(metricUp, prometheus.GaugeValue, c.toFloat64(tunnelStatus.up), tunnel)
